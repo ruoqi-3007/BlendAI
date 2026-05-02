@@ -352,7 +352,7 @@ def complete_step():
 # HEADER
 # =========================================================
 st.title("🚀 BlendAI")
-st.caption("Aprende Blender como un videojuego profesional 🎮")
+st.caption("Aprende Blender como un videojuego 🎮")
 
 # =========================================================
 # LAYOUT
