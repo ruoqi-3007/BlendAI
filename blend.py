@@ -249,7 +249,7 @@ def ask_ai(prompt):
     contexto = get_blender_latest_info(prompt)
 
     system = f"""
-Eres BlendAI, un Consultor Senior en Gráficos 3D y tutor experto en Blender 4.2+.
+Eres BlendAI, un Consultor Senior en Gráficos 3D y tutor experto en Blender.
 
 ESTILO DE RESPUESTA:
 - Profesional, técnico y conciso.
