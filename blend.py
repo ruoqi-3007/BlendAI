@@ -1,352 +1,545 @@
 import streamlit as st
 from groq import Groq
 from duckduckgo_search import DDGS
-import sqlite3
-import hashlib
 import os
 
 # =========================================================
 # CONFIG
 # =========================================================
-st.set_page_config(page_title="BlendAI 3.0", layout="wide", page_icon="🎮")
+st.set_page_config(
+    page_title="BlendAI",
+    layout="wide",
+    page_icon="🎮"
+)
 
+ICONO_IA = "https://upload.wikimedia.org/wikipedia/commons/0/0c/Blender_logo_no_text.svg"
+ICONO_USUARIO = "👨‍🎨"
+
+# =========================================================
+# CSS (AUTO LIGHT/DARK MODE)
+# =========================================================
+st.markdown("""
+<style>
+
+.stButton>button {
+    border-radius: 12px;
+    border: 1px solid rgba(120,120,120,0.3);
+    transition: 0.3s;
+    font-weight: 600;
+}
+
+.stButton>button:hover {
+    border: 1px solid #00C8FF;
+    transform: scale(1.02);
+}
+
+.block {
+    padding: 14px;
+    border-radius: 14px;
+    margin-bottom: 10px;
+    border: 1px solid rgba(120,120,120,0.2);
+    backdrop-filter: blur(6px);
+}
+
+[data-testid="stSidebar"] {
+    border-right: 1px solid rgba(120,120,120,0.15);
+}
+
+</style>
+""", unsafe_allow_html=True)
+
+# =========================================================
+# API
+# =========================================================
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+
 if not GROQ_API_KEY:
-    st.error("Missing GROQ_API_KEY")
+    st.error("❌ No se encontró la API KEY de Groq")
     st.stop()
 
 client = Groq(api_key=GROQ_API_KEY)
 
 # =========================================================
-# DB
+# SESSION STATE
 # =========================================================
-conn = sqlite3.connect("users.db", check_same_thread=False)
-c = conn.cursor()
-
-c.execute('''
-CREATE TABLE IF NOT EXISTS users (
-    username TEXT PRIMARY KEY,
-    password TEXT,
-    xp INTEGER,
-    level INTEGER,
-    unlocked TEXT,
-    avatar TEXT,
-    title TEXT
-)
-''')
-
-c.execute('''
-CREATE TABLE IF NOT EXISTS skills (
-    username TEXT,
-    modeling INTEGER,
-    materials INTEGER,
-    lighting INTEGER,
-    animation INTEGER,
-    sculpting INTEGER,
-    geometry INTEGER
-)
-''')
-
-c.execute('''
-CREATE TABLE IF NOT EXISTS achievements (
-    username TEXT,
-    name TEXT
-)
-''')
-
-conn.commit()
-
-# =========================================================
-# SESSION
-# =========================================================
-DEFAULTS = {
-    "logged_in": False,
-    "username": "",
+DEFAULT_STATE = {
     "xp": 0,
     "level": 1,
     "mission": None,
     "mission_step": 0,
     "messages": [],
-    "unlocked": ["Cubo"],
-    "avatar": "👨‍🚀",
-    "title": "Novice"
+    "unlocked": ["Cubo"]
 }
 
-for k,v in DEFAULTS.items():
-    if k not in st.session_state:
-        st.session_state[k]=v
+for key, value in DEFAULT_STATE.items():
+    if key not in st.session_state:
+        st.session_state[key] = value
 
 # =========================================================
-# MISSIONS (ORIGINAL RESTORED)
+# MISSIONS
 # =========================================================
 MISSIONS = {
-    "Cubo": ["Abrir Blender","Crear cubo","Escalar objeto","Material básico"],
-    "Donut": ["Crear torus","Subdivision","Glaseado","Render"],
-    "Coche": ["Bloqueo base","Ruedas","Low poly","Material"],
-    "Sculpt": ["Entrar Sculpt","Clay","Smooth","Detalles"],
-    "Materiales PBR": ["Shader","Texturas","Normal Maps","Roughness"],
-    "Iluminación": ["HDRI","Lights","Cycles","Cinematic"],
-    "Geometry Nodes": ["Nodo base","Distribución","Instancing","Procedural"],
-    "Animación": ["Keyframes","Timeline","Camera","Render"]
+
+    "Cubo": [
+        "Abrir Blender",
+        "Crear cubo",
+        "Mover y escalar",
+        "Material básico"
+    ],
+
+    "Donut": [
+        "Crear torus",
+        "Subdivision Surface",
+        "Glaseado",
+        "Render final"
+    ],
+
+    "Coche": [
+        "Bloqueo base",
+        "Ruedas",
+        "Low poly",
+        "Materiales"
+    ],
+
+    "Playa": [
+        "Terreno",
+        "Arena",
+        "Agua",
+        "Palmeras"
+    ],
+
+    "Habitación": [
+        "Paredes",
+        "Muebles",
+        "Iluminación interior",
+        "Render"
+    ],
+
+    "Espada": [
+        "Hoja",
+        "Mango",
+        "Metal",
+        "Render épico"
+    ],
+
+    "Animación": [
+        "Keyframes",
+        "Timeline",
+        "Movimiento cámara",
+        "Render animación"
+    ],
+
+    "Sculpt": [
+        "Entrar en Sculpt Mode",
+        "Clay Strips",
+        "Smooth Brush",
+        "Detalles faciales"
+    ],
+
+    "Materiales PBR": [
+        "Shader Editor",
+        "Texturas PBR",
+        "Roughness",
+        "Normal Maps"
+    ],
+
+    "Iluminación": [
+        "HDRI",
+        "Three Point Lighting",
+        "Area Lights",
+        "Cinematic Look"
+    ]
 }
 
+# =========================================================
+# UNLOCKS
+# =========================================================
 UNLOCKS = {
-    "Cubo":"Donut",
-    "Donut":"Coche",
-    "Coche":"Sculpt",
-    "Sculpt":"Materiales PBR",
-    "Materiales PBR":"Iluminación",
-    "Iluminación":"Geometry Nodes",
-    "Geometry Nodes":"Animación"
-}
-
-SKILL_MAP = {
-    "Cubo":["modeling"],
-    "Donut":["modeling","materials"],
-    "Coche":["modeling","materials"],
-    "Sculpt":["sculpting"],
-    "Materiales PBR":["materials"],
-    "Iluminación":["lighting"],
-    "Geometry Nodes":["geometry"],
-    "Animación":["animation"]
+    "Cubo": "Donut",
+    "Donut": "Coche",
+    "Coche": "Playa",
+    "Playa": "Habitación",
+    "Habitación": "Espada",
+    "Espada": "Animación",
+    "Animación": "Sculpt",
+    "Sculpt": "Materiales PBR",
+    "Materiales PBR": "Iluminación"
 }
 
 # =========================================================
-# UTILS
+# DAILY CHALLENGES
 # =========================================================
-
-def hash(p):
-    return hashlib.sha256(p.encode()).hexdigest()
-
-# =========================================================
-# SAVE
-# =========================================================
-
-def save():
-    c.execute("UPDATE users SET xp=?,level=?,unlocked=?,avatar=?,title=? WHERE username=?",
-              (st.session_state.xp,
-               st.session_state.level,
-               ",".join(st.session_state.unlocked),
-               st.session_state.avatar,
-               st.session_state.title,
-               st.session_state.username))
-    conn.commit()
+DAILY_CHALLENGES = [
+    "Modela un objeto usando solo cubos",
+    "Crea una escena low-poly",
+    "Haz un material metálico",
+    "Ilumina una habitación",
+    "Haz una animación simple"
+]
 
 # =========================================================
-# TITLE SYSTEM
+# RANKS
 # =========================================================
-TITLES=["Novice","Apprentice","Junior","Artist","Senior","Tech Artist","Expert","Master","Legend","Myth"]
+def get_rank(level):
 
-def update_title():
-    st.session_state.title=TITLES[min(len(TITLES)-1,st.session_state.level//10)]
-
-# =========================================================
-# XP SYSTEM (RESTORED RPG)
-# =========================================================
-
-def add_xp(xp,mission=None):
-
-    st.session_state.xp+=xp
-    st.session_state.level=min(100,1+st.session_state.xp//50)
-
-    if mission:
-        c.execute("SELECT * FROM skills WHERE username=?",(st.session_state.username,))
-        if not c.fetchone():
-            c.execute("INSERT INTO skills VALUES (?,?,?,?,?,?,?)",
-                      (st.session_state.username,0,0,0,0,0,0))
-
-        for s in SKILL_MAP.get(mission,[]):
-            c.execute(f"UPDATE skills SET {s}={s}+1 WHERE username=?",
-                      (st.session_state.username,))
-
-    update_title()
-    save()
+    if level < 3:
+        return "🟢 Beginner"
+    elif level < 6:
+        return "🔵 Apprentice"
+    elif level < 10:
+        return "🟣 Artist"
+    elif level < 15:
+        return "🟠 Technical Artist"
+    else:
+        return "🔴 Blender Master"
 
 # =========================================================
-# AI + CONTEXT (RESTORED DDG)
+# XP SYSTEM
 # =========================================================
-@st.cache_data(ttl=3600)
-def get_context(q):
+def check_level_up(old_level):
+
+    if st.session_state.level > old_level:
+        st.balloons()
+        st.success(
+            f"🎉 LEVEL UP! Ahora eres nivel {st.session_state.level}"
+        )
+
+
+def add_xp(amount):
+
+    old_level = st.session_state.level
+
+    st.session_state.xp += amount
+
+    st.session_state.level = 1 + st.session_state.xp // 50
+
+    check_level_up(old_level)
+
+
+def show_xp_feedback(xp_gain):
+    st.toast(f"⭐ +{xp_gain} XP", icon="🎮")
+
+# =========================================================
+# BLENDER DOCS
+# =========================================================
+def get_blender_latest_info(query):
+
     try:
         with DDGS() as ddgs:
-            r=ddgs.text(q+" Blender docs",max_results=2)
-            return "\n".join(x.get("body","") for x in r)[:1000]
+
+            results = ddgs.text(
+                f"Blender 4.2 {query} site:docs.blender.org",
+                max_results=2
+            )
+
+            return "\n".join(
+                r.get("body", "")
+                for r in results
+                if r.get("body")
+            )[:1000]
+
     except:
         return ""
 
-
+# =========================================================
+# AI
+# =========================================================
 def ask_ai(prompt):
 
-    context=get_context(prompt)
+    contexto = get_blender_latest_info(prompt)
 
-    r=client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
-        messages=[
-            {"role":"system","content":"Eres tutor experto Blender 4.2"},
-            {"role":"system","content":context},
-            {"role":"user","content":prompt}
-        ],
-        temperature=0.5
+    system = f"""
+Eres BlendAI, un Consultor Senior en Gráficos 3D y tutor experto en Blender 4.2+.
+
+ESTILO DE RESPUESTA:
+- Profesional, técnico y conciso.
+- Usa Markdown estrictamente.
+- Herramientas en **negrita**.
+- Atajos en `código`.
+- Indica siempre el modo Blender necesario.
+- Ajusta dificultad según Nivel {st.session_state.level}.
+- Da feedback como entrenador profesional tipo RPG educativo.
+
+FORMATO:
+1. Objetivo
+2. Acción técnica
+3. Shortcut
+4. Consejo profesional
+
+MISIÓN ACTUAL:
+{st.session_state.mission}
+
+PASO ACTUAL:
+{st.session_state.mission_step}
+"""
+
+    messages = [
+        {
+            "role": "system",
+            "content": system
+        }
+    ]
+
+    if contexto:
+        messages.append({
+            "role": "assistant",
+            "content": f"📚 Referencia técnica Blender:\n{contexto}"
+        })
+
+    messages.append({
+        "role": "user",
+        "content": prompt
+    })
+
+    try:
+
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=messages,
+            temperature=0.6,
+            max_tokens=700
+        )
+
+        return response.choices[0].message.content
+
+    except Exception as e:
+        return f"❌ Error: {str(e)}"
+
+# =========================================================
+# MISSIONS
+# =========================================================
+def start_mission(name):
+
+    st.session_state.mission = name
+    st.session_state.mission_step = 0
+
+    return ask_ai(
+        f"Iniciamos la misión {name}. Dame el PASO 1 detallado."
     )
 
-    return r.choices[0].message.content
 
-# =========================================================
-# LOGIN
-# =========================================================
+def complete_step():
 
-def register(u,p):
-    try:
-        c.execute("INSERT INTO users VALUES (?,?,?,?,?,?,?)",
-                  (u,hash(p),0,1,"Cubo","👨‍🚀","Novice"))
-        conn.commit()
-        return True
-    except:
-        return False
+    mission = st.session_state.mission
 
+    st.session_state.mission_step += 1
 
-def login(u,p):
-    c.execute("SELECT * FROM users WHERE username=? AND password=?",
-              (u,hash(p)))
-    return c.fetchone()
+    xp_gain = 10
 
-# =========================================================
-# LOGIN SCREEN
-# =========================================================
-if not st.session_state.logged_in:
+    add_xp(xp_gain)
+    show_xp_feedback(xp_gain)
 
-    st.title("BlendAI 3.0")
+    if st.session_state.mission_step >= len(MISSIONS[mission]):
 
-    u=st.text_input("User")
-    p=st.text_input("Pass",type="password")
+        add_xp(50)
 
-    if st.button("Login"):
-        user=login(u,p)
-        if user:
-            st.session_state.logged_in=True
-            st.session_state.username=u
-            st.session_state.xp=user[2]
-            st.session_state.level=user[3]
-            st.session_state.unlocked=user[4].split(",")
-            st.session_state.avatar=user[5]
-            st.session_state.title=user[6]
-            st.rerun()
+        if mission in UNLOCKS:
 
-    if st.button("Register"):
-        register(u,p)
-        st.success("Created")
+            next_mission = UNLOCKS[mission]
 
-    st.stop()
+            if next_mission not in st.session_state.unlocked:
+                st.session_state.unlocked.append(next_mission)
+
+        st.session_state.mission = None
+
+        return "🎉 ¡Misión completada! Has desbloqueado nuevo contenido."
+
+    return ask_ai(
+        "He completado el paso anterior. Dame el siguiente paso."
+    )
 
 # =========================================================
 # HEADER
 # =========================================================
+st.title("🚀 BlendAI")
+st.caption("Aprende Blender como un videojuego 🎮")
 
-st.title(f"{st.session_state.avatar} BlendAI 3.0")
-st.caption(f"{st.session_state.title} | Level {st.session_state.level} | XP {st.session_state.xp}")
+# =========================================================
+# LAYOUT
+# =========================================================
+col1, col2 = st.columns([2.3, 1])
 
 # =========================================================
 # SIDEBAR
 # =========================================================
-
 with st.sidebar:
 
-    st.subheader("Profile")
+    st.title("🎮 BlendAI")
 
-    st.write(st.session_state.avatar)
-    st.write(st.session_state.title)
+    st.subheader("📊 Perfil")
+
+    st.write(f"⭐ XP: {st.session_state.xp}")
+    st.write(f"🏅 Nivel: {st.session_state.level}")
+
+    st.write(
+        f"🏆 Rango: {get_rank(st.session_state.level)}"
+    )
+
+    current_xp = st.session_state.xp % 50
+    progress = current_xp / 50
+
+    st.progress(progress)
+
+    st.caption(
+        f"{current_xp}/50 XP para siguiente nivel"
+    )
 
     st.divider()
 
-    st.subheader("Skills")
+    st.subheader("🔥 Reto diario")
 
-    c.execute("SELECT * FROM skills WHERE username=?",(st.session_state.username,))
-    s=c.fetchone()
+    challenge = DAILY_CHALLENGES[
+        st.session_state.level % len(DAILY_CHALLENGES)
+    ]
 
-    if s:
-        labels=["modeling","materials","lighting","animation","sculpting","geometry"]
-        for i,l in enumerate(labels,1):
-            st.progress(min(s[i]/20,1.0))
-            st.write(l,":",s[i])
+    st.info(challenge)
 
     st.divider()
 
-    st.subheader("Achievements")
+    st.subheader("🗺️ Misiones")
 
-    ACH=["First Render","Cubo Complete","Donut Complete","Coche Complete",
-         "Sculpt Master","Lighting Pro","Geometry Master","Animator","Level 10","Level 25"]
+    for mission in st.session_state.unlocked:
 
-    for a in ACH:
-        c.execute("SELECT name FROM achievements WHERE username=? AND name=?",
-                  (st.session_state.username,a))
-        st.write("🏆" if c.fetchone() else "🔒",a)
+        if st.button(
+            f"🎯 {mission}",
+            use_container_width=True
+        ):
+
+            msg = start_mission(mission)
+
+            st.session_state.messages.append({
+                "role": "assistant",
+                "content": msg
+            })
+
+            st.rerun()
+
+    st.divider()
+
+    st.subheader("⚙️ Sistema")
+
+    if st.button(
+        "🔄 Reiniciar BlendAI",
+        use_container_width=True
+    ):
+
+        for key, value in DEFAULT_STATE.items():
+            st.session_state[key] = value
+
+        st.rerun()
 
 # =========================================================
-# CHAT + MISSIONS (RESTORED FLOW)
+# MAIN CHAT
 # =========================================================
-
-col1,col2=st.columns([2,1])
-
 with col1:
 
-    st.subheader("AI Tutor")
-
-    for m in st.session_state.messages:
-        with st.chat_message(m["role"]):
-            st.write(m["content"])
+    st.subheader("🎓 Tutor IA")
 
     if st.session_state.mission:
 
-        step=st.session_state.mission_step
-        mission=st.session_state.mission
+        total_steps = len(
+            MISSIONS[st.session_state.mission]
+        )
 
-        st.info(f"Mission: {mission} | Step {step+1}/{len(MISSIONS[mission])}")
+        st.info(
+            f"🎯 Misión actual: {st.session_state.mission}"
+        )
 
-        if st.button("Complete step"):
+        st.progress(
+            st.session_state.mission_step / total_steps
+        )
 
-            st.session_state.mission_step+=1
+        st.caption(
+            f"Paso {st.session_state.mission_step + 1}/{total_steps}"
+        )
 
-            add_xp(1,mission)
+    for msg in st.session_state.messages:
 
-            if st.session_state.mission_step>=len(MISSIONS[mission]):
+        avatar = (
+            ICONO_IA
+            if msg["role"] == "assistant"
+            else ICONO_USUARIO
+        )
 
-                add_xp(5,mission)
+        with st.chat_message(
+            msg["role"],
+            avatar=avatar
+        ):
 
-                if mission in UNLOCKS:
-                    nxt=UNLOCKS[mission]
-                    if nxt not in st.session_state.unlocked:
-                        st.session_state.unlocked.append(nxt)
+            st.markdown(msg["content"])
 
-                st.session_state.mission=None
-                st.success("Mission completed")
+    if st.session_state.mission:
+
+        if st.button(
+            "✅ Completar paso",
+            use_container_width=True
+        ):
+
+            with st.spinner("BlendAI está evaluando..."):
+                msg = complete_step()
+
+            st.session_state.messages.append({
+                "role": "assistant",
+                "content": msg
+            })
+
+            st.rerun()
 
 # =========================================================
-# MISSIONS PANEL
+# SIDE PANEL
 # =========================================================
-
 with col2:
 
-    st.subheader("Missions")
+    st.subheader("💬 Chat libre")
 
-    for m in MISSIONS:
+    st.caption(
+        "Preguntas rápidas sobre Blender"
+    )
 
-        if m in st.session_state.unlocked:
+    quick_questions = [
+        "¿Cómo hacer una playa realista?",
+        "¿Cómo usar Geometry Nodes?",
+        "¿Cómo iluminar una escena?",
+        "¿Cómo hacer agua realista?",
+        "¿Cómo renderizar en Cycles?",
+        "¿Cómo optimizar topología?"
+    ]
 
-            if st.button(m):
-                st.session_state.mission=m
-                st.session_state.mission_step=0
+    for q in quick_questions:
 
-                msg=ask_ai(f"Start mission {m} step 1")
+        if st.button(
+            q,
+            use_container_width=True
+        ):
 
-                st.session_state.messages.append({"role":"assistant","content":msg})
+            with st.spinner("BlendAI está analizando..."):
+                response = ask_ai(q)
+
+            st.session_state.messages.append({
+                "role": "assistant",
+                "content": response
+            })
+
+            st.rerun()
 
 # =========================================================
-# IMAGE ANALYSIS (PRO OPTION 3)
+# CHAT INPUT
 # =========================================================
+if prompt := st.chat_input(
+    "Pregunta cualquier cosa sobre Blender..."
+):
 
-st.subheader("Image Analysis")
-img=st.file_uploader("Upload render")
+    st.session_state.messages.append({
+        "role": "user",
+        "content": prompt
+    })
 
-if img:
-    st.image(img)
-    st.success("Quality: 86% | Lighting: 84% | Topology: 79% | Materials: 82%")
+    with st.spinner("BlendAI está analizando..."):
+        response = ask_ai(prompt)
+
+    st.session_state.messages.append({
+        "role": "assistant",
+        "content": response
+    })
+
+    st.rerun()
