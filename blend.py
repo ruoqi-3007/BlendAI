@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS users (
 
 c.execute('''
 CREATE TABLE IF NOT EXISTS skills (
-    username TEXT,
+    username TEXT PRIMARY KEY,
     modeling INTEGER,
     materials INTEGER,
     lighting INTEGER,
@@ -72,111 +72,118 @@ DEFAULTS = {
     "title": "Novice"
 }
 
-for k,v in DEFAULTS.items():
+for k, v in DEFAULTS.items():
     if k not in st.session_state:
-        st.session_state[k]=v
+        st.session_state[k] = v
 
 # =========================================================
-# MISSIONS (ORIGINAL RESTORED)
+# MISSIONS
 # =========================================================
 MISSIONS = {
-    "Cubo": ["Abrir Blender","Crear cubo","Escalar objeto","Material básico"],
-    "Donut": ["Crear torus","Subdivision","Glaseado","Render"],
-    "Coche": ["Bloqueo base","Ruedas","Low poly","Material"],
-    "Sculpt": ["Entrar Sculpt","Clay","Smooth","Detalles"],
-    "Materiales PBR": ["Shader","Texturas","Normal Maps","Roughness"],
-    "Iluminación": ["HDRI","Lights","Cycles","Cinematic"],
-    "Geometry Nodes": ["Nodo base","Distribución","Instancing","Procedural"],
-    "Animación": ["Keyframes","Timeline","Camera","Render"]
+    "Cubo": ["Abrir Blender", "Crear cubo", "Escalar objeto", "Material básico"],
+    "Donut": ["Crear torus", "Subdivision", "Glaseado", "Render"],
+    "Coche": ["Bloqueo base", "Ruedas", "Low poly", "Material"],
+    "Sculpt": ["Entrar Sculpt", "Clay", "Smooth", "Detalles"],
+    "Materiales PBR": ["Shader", "Texturas", "Normal Maps", "Roughness"],
+    "Iluminación": ["HDRI", "Lights", "Cycles", "Cinematic"],
+    "Geometry Nodes": ["Nodo base", "Distribución", "Instancing", "Procedural"],
+    "Animación": ["Keyframes", "Timeline", "Camera", "Render"]
 }
 
 UNLOCKS = {
-    "Cubo":"Donut",
-    "Donut":"Coche",
-    "Coche":"Sculpt",
-    "Sculpt":"Materiales PBR",
-    "Materiales PBR":"Iluminación",
-    "Iluminación":"Geometry Nodes",
-    "Geometry Nodes":"Animación"
+    "Cubo": "Donut",
+    "Donut": "Coche",
+    "Coche": "Sculpt",
+    "Sculpt": "Materiales PBR",
+    "Materiales PBR": "Iluminación",
+    "Iluminación": "Geometry Nodes",
+    "Geometry Nodes": "Animación"
 }
 
 SKILL_MAP = {
-    "Cubo":["modeling"],
-    "Donut":["modeling","materials"],
-    "Coche":["modeling","materials"],
-    "Sculpt":["sculpting"],
-    "Materiales PBR":["materials"],
-    "Iluminación":["lighting"],
-    "Geometry Nodes":["geometry"],
-    "Animación":["animation"]
+    "Cubo": ["modeling"],
+    "Donut": ["modeling", "materials"],
+    "Coche": ["modeling", "materials"],
+    "Sculpt": ["sculpting"],
+    "Materiales PBR": ["materials"],
+    "Iluminación": ["lighting"],
+    "Geometry Nodes": ["geometry"],
+    "Animación": ["animation"]
 }
 
 # =========================================================
 # UTILS
 # =========================================================
-
-def hash(p):
+def hash_password(p):
     return hashlib.sha256(p.encode()).hexdigest()
+
+def ensure_skills(user):
+    c.execute("SELECT username FROM skills WHERE username=?", (user,))
+    if not c.fetchone():
+        c.execute('''
+            INSERT INTO skills VALUES (?,?,?,?,?,?,?)
+        ''', (user, 0, 0, 0, 0, 0, 0))
+        conn.commit()
 
 # =========================================================
 # SAVE
 # =========================================================
-
 def save():
-    c.execute("UPDATE users SET xp=?,level=?,unlocked=?,avatar=?,title=? WHERE username=?",
-              (st.session_state.xp,
-               st.session_state.level,
-               ",".join(st.session_state.unlocked),
-               st.session_state.avatar,
-               st.session_state.title,
-               st.session_state.username))
+    c.execute("""
+    UPDATE users SET xp=?, level=?, unlocked=?, avatar=?, title=?
+    WHERE username=?
+    """, (
+        st.session_state.xp,
+        st.session_state.level,
+        ",".join(st.session_state.unlocked),
+        st.session_state.avatar,
+        st.session_state.title,
+        st.session_state.username
+    ))
     conn.commit()
 
 # =========================================================
 # TITLE SYSTEM
 # =========================================================
-TITLES=["Novice","Apprentice","Junior","Artist","Senior","Tech Artist","Expert","Master","Legend","Myth"]
+TITLES = ["Novice","Apprentice","Junior","Artist","Senior",
+          "Tech Artist","Expert","Master","Legend","Myth"]
 
 def update_title():
-    st.session_state.title=TITLES[min(len(TITLES)-1,st.session_state.level//10)]
+    st.session_state.title = TITLES[min(len(TITLES)-1, st.session_state.level // 10)]
 
 # =========================================================
-# XP SYSTEM (RESTORED RPG)
+# XP SYSTEM
 # =========================================================
-
-def add_xp(xp,mission=None):
-
-    st.session_state.xp+=xp
-    st.session_state.level=min(100,1+st.session_state.xp//50)
+def add_xp(xp, mission=None):
+    st.session_state.xp += xp
+    st.session_state.level = min(100, 1 + st.session_state.xp // 50)
 
     if mission:
-        c.execute("SELECT * FROM skills WHERE username=?",(st.session_state.username,))
-        if not c.fetchone():
-            c.execute("INSERT INTO skills VALUES (?,?,?,?,?,?,?)",
-                      (st.session_state.username,0,0,0,0,0,0))
+        ensure_skills(st.session_state.username)
 
-        for s in SKILL_MAP.get(mission,[]):
-            c.execute(f"UPDATE skills SET {s}={s}+1 WHERE username=?",
-                      (st.session_state.username,))
+        for s in SKILL_MAP.get(mission, []):
+            c.execute(f"""
+                UPDATE skills
+                SET {s} = {s} + 1
+                WHERE username=?
+            """, (st.session_state.username,))
 
     update_title()
     save()
 
 # =========================================================
-# AI + CONTEXT (RESTORED DDG)
+# AI + CONTEXT
 # =========================================================
 @st.cache_data(ttl=3600)
 def get_context(q):
     try:
         with DDGS() as ddgs:
-            r=ddgs.text(q+" Blender docs",max_results=2)
+            r = ddgs.text(q + " Blender docs", max_results=2)
             return "\n".join(x.get("body","") for x in r)[:1000]
     except:
         return ""
 
-
 def ask_ai(prompt):
-
     context = get_context(prompt)
 
     r = client.chat.completions.create(
@@ -184,16 +191,10 @@ def ask_ai(prompt):
         messages=[
             {
                 "role": "system",
-                "content": "Eres tutor experto en Blender (última versión estable). Explica SIEMPRE paso a paso para principiantes. No asumas conocimientos previos. Divide las explicaciones en pasos numerados claros y añade atajos de teclado cuando sea posible."
+                "content": "Eres tutor experto en Blender. Explica paso a paso para principiantes."
             },
-            {
-                "role": "system",
-                "content": context
-            },
-            {
-                "role": "user",
-                "content": prompt
-            }
+            {"role": "system", "content": context},
+            {"role": "user", "content": prompt}
         ],
         temperature=0.5
     )
@@ -201,55 +202,59 @@ def ask_ai(prompt):
     return r.choices[0].message.content
 
 # =========================================================
-# LOGIN
+# AUTH
 # =========================================================
-
-def register(u,p):
+def register(u, p):
     try:
-        c.execute("INSERT INTO users VALUES (?,?,?,?,?,?,?)",
-                  (u,hash(p),0,1,"Cubo","👨‍🚀","Novice"))
+        c.execute("""
+        INSERT INTO users VALUES (?,?,?,?,?,?,?)
+        """, (u, hash_password(p), 0, 1, "Cubo", "👨‍🚀", "Novice"))
         conn.commit()
+        ensure_skills(u)
         return True
     except:
         return False
 
-
-def login(u,p):
-    c.execute("SELECT * FROM users WHERE username=? AND password=?",
-              (u,hash(p)))
+def login(u, p):
+    c.execute("""
+    SELECT * FROM users WHERE username=? AND password=?
+    """, (u, hash_password(p)))
     return c.fetchone()
 
 # =========================================================
-# LOGIN SCREEN
+# LOGIN UI
 # =========================================================
 if not st.session_state.logged_in:
 
     st.title("BlendAI")
 
-    u=st.text_input("User")
-    p=st.text_input("Pass",type="password")
+    u = st.text_input("User")
+    p = st.text_input("Pass", type="password")
 
     if st.button("Login"):
-        user=login(u,p)
+        user = login(u, p)
         if user:
-            st.session_state.logged_in=True
-            st.session_state.username=u
-            st.session_state.xp=user[2]
-            st.session_state.level=user[3]
-            st.session_state.unlocked=user[4].split(",")
-            st.session_state.avatar=user[5]
-            st.session_state.title=user[6]
+            st.session_state.logged_in = True
+            st.session_state.username = u
+            st.session_state.xp = user[2]
+            st.session_state.level = user[3]
+            st.session_state.unlocked = user[4].split(",")
+            st.session_state.avatar = user[5]
+            st.session_state.title = user[6]
+
+            ensure_skills(u)
             st.rerun()
 
     if st.button("Register"):
-        register(u,p)
-        st.success("Created")
+        if register(u, p):
+            st.success("Created")
+        else:
+            st.error("User already exists")
 
     st.stop()
 
 # =========================================================
 # HEADER
 # =========================================================
-
 st.title(f"{st.session_state.avatar} BlendAI")
 st.caption(f"{st.session_state.title} | Level {st.session_state.level} | XP {st.session_state.xp}")
